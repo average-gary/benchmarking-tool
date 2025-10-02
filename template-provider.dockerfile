@@ -7,7 +7,7 @@ RUN apt-get update && apt-get upgrade -y
 RUN apt-get install -y wget tar curl jq
 
 # Set environment variables for Bitcoin Core version and installation directory
-ENV BITCOIN_VERSION=sv2-tp-0.1.9
+ENV BITCOIN_VERSION=v1.0.2
 ENV BITCOIN_DIR=/bitcoin
 
 # Create the directory where Bitcoin Core will be installed
@@ -15,9 +15,9 @@ RUN mkdir -p $BITCOIN_DIR
 
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
-        BITCOIN_URL=https://github.com/Sjors/bitcoin/releases/download/$BITCOIN_VERSION/bitcoin-$BITCOIN_VERSION-x86_64-linux-gnu.tar.gz; \
+        BITCOIN_URL=https://github.com/Sjors/sv2-tp/releases/download/$BITCOIN_VERSION/sv2-tp-1.0.2-x86_64-linux-gnu.tar.gz; \
     elif [ "$ARCH" = "arm64" ]; then \
-        BITCOIN_URL=https://github.com/Sjors/bitcoin/releases/download/$BITCOIN_VERSION/bitcoin-$BITCOIN_VERSION-aarch64-linux-gnu.tar.gz; \
+        BITCOIN_URL=https://github.com/Sjors/sv2-tp/releases/download/$BITCOIN_VERSION/sv2-tp-1.0.2-aarch64-linux-gnu.tar.gz; \
     else \
         echo "Unsupported architecture"; exit 1; \
     fi && \
