@@ -14,13 +14,13 @@ min_supported_version = 2
 #     https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki#appendix-b-index-of-script-expressions
 # Although the `musig` descriptor is not yet supported and the legacy `combo` descriptor never
 # will be. If you have an address, embed it in a descriptor like `addr(<address here>)`.
-coinbase_reward_script = "addr(tb1q2zc2k3uh6ketqd6yswzdy8evrcvd8yxn4sw0f5)"
+coinbase_reward_script = "addr(tb1q3z6v6ga372pqwej23r0akpx3v6n6xdffglhd72)"
 
 # Server Id (number to guarantee unique search space allocation across different Pool servers)
 server_id = 1
 
 # Pool signature (string to be included in coinbase tx)
-pool_signature = "Stratum V2 SRI Pool"
+pool_signature = "average-benchmark"
 
 # Template Provider config
 # Local TP (this is pointing to localhost so you must run a TP locally for this configuration to work)
