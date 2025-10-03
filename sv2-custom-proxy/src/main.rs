@@ -1,20 +1,24 @@
-use demand_easy_sv2::const_sv2::{
-    MESSAGE_TYPE_NEW_TEMPLATE, MESSAGE_TYPE_SET_NEW_PREV_HASH, MESSAGE_TYPE_SUBMIT_SHARES_ERROR,
-    MESSAGE_TYPE_SUBMIT_SHARES_EXTENDED, MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS,
-    MESSAGE_TYPE_SUBMIT_SOLUTION,
+mod proxy;
+
+use mining_sv2::{
+    MESSAGE_TYPE_SUBMIT_SHARES_ERROR, MESSAGE_TYPE_SUBMIT_SHARES_EXTENDED,
+    MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS,
 };
-use demand_easy_sv2::roles_logic_sv2::parsers::{Mining, PoolMessages, TemplateDistribution};
-use demand_easy_sv2::{ProxyBuilder, Remote};
+use parsers_sv2::{AnyMessage, Mining, TemplateDistribution};
 use prometheus::{
     register_counter, register_gauge, register_gauge_vec, Counter, Encoder, Gauge, GaugeVec,
     TextEncoder,
 };
+use proxy::{ProxyBuilder, Remote};
 use reqwest::Client;
 use serde_json::Value;
 use std::env;
 use std::fmt::Write;
 use std::net::ToSocketAddrs;
 use std::time::SystemTime;
+use template_distribution_sv2::{
+    MESSAGE_TYPE_NEW_TEMPLATE, MESSAGE_TYPE_SET_NEW_PREV_HASH, MESSAGE_TYPE_SUBMIT_SOLUTION,
+};
 use tokio::net::TcpStream;
 use tokio::time::{sleep, Duration};
 use warp::Filter;
@@ -431,14 +435,10 @@ async fn intercept_prev_hash(
     last_block_mined_value: Gauge,
     last_sv2_block_template_value: Gauge,
 ) {
-    let mut r = builder.add_handler(
-        demand_easy_sv2::Remote::Server,
-        MESSAGE_TYPE_SET_NEW_PREV_HASH,
-    );
+    let r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SET_NEW_PREV_HASH);
     tokio::spawn(async move {
-        while let Some(PoolMessages::TemplateDistribution(TemplateDistribution::SetNewPrevHash(
-            m,
-        ))) = r.recv().await
+        while let Ok(AnyMessage::TemplateDistribution(TemplateDistribution::SetNewPrevHash(m))) =
+            r.recv().await
         {
             let mut id = m.prev_hash;
             let d = id.inner_as_mut();
@@ -499,9 +499,9 @@ async fn intercept_new_template(
     new_job_timestamp: GaugeVec,
     sv2_block_template_value: Gauge,
 ) {
-    let mut r = builder.add_handler(demand_easy_sv2::Remote::Server, MESSAGE_TYPE_NEW_TEMPLATE);
+    let r = builder.add_handler(Remote::Server, MESSAGE_TYPE_NEW_TEMPLATE);
     tokio::spawn(async move {
-        while let Some(PoolMessages::TemplateDistribution(TemplateDistribution::NewTemplate(m))) =
+        while let Ok(AnyMessage::TemplateDistribution(TemplateDistribution::NewTemplate(m))) =
             r.recv().await
         {
             let id = m.template_id;
@@ -531,9 +531,9 @@ async fn intercept_submit_share_extended(
     submitted_shares: Counter,
     gauge: GaugeVec,
 ) {
-    let mut r = builder.add_handler(Remote::Client, MESSAGE_TYPE_SUBMIT_SHARES_EXTENDED);
+    let r = builder.add_handler(Remote::Client, MESSAGE_TYPE_SUBMIT_SHARES_EXTENDED);
     tokio::spawn(async move {
-        while let Some(PoolMessages::Mining(Mining::SubmitSharesExtended(m))) = r.recv().await {
+        while let Ok(AnyMessage::Mining(Mining::SubmitSharesExtended(m))) = r.recv().await {
             submitted_shares.inc();
 
             let id = m.nonce;
@@ -557,18 +557,18 @@ async fn intercept_submit_share_extended(
 }
 
 async fn intercept_submit_share_success(builder: &mut ProxyBuilder, valid_shares: Counter) {
-    let mut r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS);
+    let r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS);
     tokio::spawn(async move {
-        while let Some(PoolMessages::Mining(Mining::SubmitSharesSuccess(_m))) = r.recv().await {
+        while let Ok(AnyMessage::Mining(Mining::SubmitSharesSuccess(_m))) = r.recv().await {
             valid_shares.inc();
         }
     });
 }
 
 async fn intercept_submit_share_error(builder: &mut ProxyBuilder, stale_shares: Counter) {
-    let mut r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SUBMIT_SHARES_ERROR);
+    let r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SUBMIT_SHARES_ERROR);
     tokio::spawn(async move {
-        while let Some(PoolMessages::Mining(Mining::SubmitSharesError(m))) = r.recv().await {
+        while let Ok(AnyMessage::Mining(Mining::SubmitSharesError(m))) = r.recv().await {
             log::error!("SubmitSharesError received --> {:?}", m);
             stale_shares.inc();
         }
@@ -580,13 +580,12 @@ async fn intercept_submit_solution(
     block_propagation_time: Gauge,
     mined_blocks: Counter,
 ) {
-    let mut r = builder.add_handler(Remote::Client, MESSAGE_TYPE_SUBMIT_SOLUTION);
+    let r = builder.add_handler(Remote::Client, MESSAGE_TYPE_SUBMIT_SOLUTION);
     let client = Client::new();
 
     tokio::spawn(async move {
-        while let Some(PoolMessages::TemplateDistribution(TemplateDistribution::SubmitSolution(
-            m,
-        ))) = r.recv().await
+        while let Ok(AnyMessage::TemplateDistribution(TemplateDistribution::SubmitSolution(m))) =
+            r.recv().await
         {
             let current_timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
