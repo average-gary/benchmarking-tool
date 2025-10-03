@@ -22,6 +22,11 @@ shares_per_minute = 6.0
 # Share batch size
 share_batch_size = 10
 
+# Minimum extranonce size for downstream connections
+# This controls the minimum size of the extranonce field
+# Min value: 2, Max value: 16
+min_extranonce_size = 4
+
 # JDC supports two modes:
 # "FULLTEMPLATE"  - full template mining
 # "COINBASEONLY" - coinbase-only mining
