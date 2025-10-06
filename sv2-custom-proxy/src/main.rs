@@ -790,8 +790,8 @@ async fn intercept_submit_share_extended(
 async fn intercept_submit_share_success(builder: &mut ProxyBuilder, valid_shares: Counter) {
     let r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS);
     tokio::spawn(async move {
-        while let Ok(AnyMessage::Mining(Mining::SubmitSharesSuccess(m))) = r.recv().await {
-            valid_shares.inc_by(m.new_submits_accepted_count as f64);
+        while let Ok(AnyMessage::Mining(Mining::SubmitSharesSuccess(_m))) = r.recv().await {
+            valid_shares.inc();
         }
     });
 }
