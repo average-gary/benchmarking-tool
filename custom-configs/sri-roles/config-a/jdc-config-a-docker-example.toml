@@ -20,7 +20,7 @@ user_identity = "jdc_user"
 shares_per_minute = 6.0
 
 # Share batch size
-share_batch_size = 10
+share_batch_size = 1
 
 # Minimum extranonce size for downstream connections
 # This controls the minimum size of the extranonce field

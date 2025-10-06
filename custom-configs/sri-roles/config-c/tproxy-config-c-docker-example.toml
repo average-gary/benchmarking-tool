@@ -22,6 +22,9 @@ min_supported_version = 2
 # Min value: 2
 min_extranonce2_size = 4
 
+# Aggregate channels: if true, all miners share one upstream channel; if false, each miner gets its own channel
+aggregate_channels = false
+
 # Difficulty params
 [downstream_difficulty_config]
 # hashes/s of the weakest miner that will be connecting (e.g.: 10 Th/s = 10_000_000_000_000.0)
