@@ -2,9 +2,11 @@ use crate::proxy::{Frame_, MessageChannel, Remote};
 use async_channel::{bounded, Receiver, Sender};
 use codec_sv2::{HandshakeRole, Initiator, Responder};
 use key_utils::{Error as KeyUtilsError, Secp256k1PublicKey, Secp256k1SecretKey};
-use network_helpers_sv2::noise_connection::Connection;
-use parsers_sv2::AnyMessage;
+use stratum_common::{
+    network_helpers_sv2::noise_connection::Connection, roles_logic_sv2::parsers_sv2::AnyMessage,
+};
 use tokio::{net::TcpStream, select};
+use tracing::{debug, info, trace};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ProxyError {
@@ -24,12 +26,17 @@ impl Proxy {
     pub async fn start(self) -> Result<(), ProxyError> {
         let mut client_handlers = vec![];
         let mut server_handlers = vec![];
+        info!("Proxy starting with {} message handlers", self.handlers.len());
         for handler in self.handlers {
+            info!("  Handler: message_type={} (0x{:02x}), expect_from={:?}",
+                       handler.message_type, handler.message_type, handler.expect_from);
             match handler.expect_from {
                 Remote::Client => client_handlers.push(handler),
                 Remote::Server => server_handlers.push(handler),
             }
         }
+        info!("Proxy handlers initialized: {} from client, {} from server",
+                   client_handlers.len(), server_handlers.len());
         select! {
             r = Self::recv_from_down_send_to_up(self.from_client, self.to_server, client_handlers) => r,
             r = Self::recv_from_up_send_to_down(self.from_server, self.to_client, server_handlers) => r,
@@ -42,17 +49,22 @@ impl Proxy {
         mut handlers: Vec<MessageChannel>,
     ) -> Result<(), ProxyError> {
         while let Ok(mut frame) = recv.recv().await {
+            trace!("recv_from_down_send_to_up: Received frame from client");
             let mut send_original_frame_upstream = true;
             for handler in handlers.iter_mut() {
                 if let Some(frame) = handler.on_message(&mut frame).await {
+                    debug!("Handler intercepted and replaced frame");
                     send_original_frame_upstream = false;
                     if send.send(frame).await.is_err() {
                         return Err(ProxyError::UpstreamClosed);
                     };
                 }
             }
-            if send_original_frame_upstream && send.send(frame).await.is_err() {
-                return Err(ProxyError::UpstreamClosed);
+            if send_original_frame_upstream {
+                trace!("Forwarding original frame upstream");
+                if send.send(frame).await.is_err() {
+                    return Err(ProxyError::UpstreamClosed);
+                }
             };
         }
         Err(ProxyError::DownstreamClosed)
@@ -64,17 +76,22 @@ impl Proxy {
         mut handlers: Vec<MessageChannel>,
     ) -> Result<(), ProxyError> {
         while let Ok(mut frame) = recv.recv().await {
+            trace!("recv_from_up_send_to_down: Received frame from server");
             let mut send_original_frame_upstream = true;
             for handler in handlers.iter_mut() {
                 if let Some(frame) = handler.on_message(&mut frame).await {
+                    debug!("Handler intercepted and replaced frame");
                     send_original_frame_upstream = false;
                     if send.send(frame).await.is_err() {
                         return Err(ProxyError::DownstreamClosed);
                     };
                 }
             }
-            if send_original_frame_upstream && send.send(frame).await.is_err() {
-                return Err(ProxyError::DownstreamClosed);
+            if send_original_frame_upstream {
+                trace!("Forwarding original frame downstream");
+                if send.send(frame).await.is_err() {
+                    return Err(ProxyError::DownstreamClosed);
+                }
             };
         }
         Err(ProxyError::UpstreamClosed)

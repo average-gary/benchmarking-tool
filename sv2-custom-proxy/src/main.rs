@@ -1,10 +1,15 @@
 mod proxy;
 
-use mining_sv2::{
-    MESSAGE_TYPE_SUBMIT_SHARES_ERROR, MESSAGE_TYPE_SUBMIT_SHARES_EXTENDED,
-    MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS,
+use stratum_common::roles_logic_sv2::{
+    mining_sv2::{
+        MESSAGE_TYPE_SUBMIT_SHARES_ERROR, MESSAGE_TYPE_SUBMIT_SHARES_EXTENDED,
+        MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS,
+    },
+    parsers_sv2::{AnyMessage, Mining, TemplateDistribution},
+    template_distribution_sv2::{
+        MESSAGE_TYPE_NEW_TEMPLATE, MESSAGE_TYPE_SET_NEW_PREV_HASH, MESSAGE_TYPE_SUBMIT_SOLUTION,
+    },
 };
-use parsers_sv2::{AnyMessage, Mining, TemplateDistribution};
 use prometheus::{
     register_counter, register_gauge, register_gauge_vec, Counter, Encoder, Gauge, GaugeVec,
     TextEncoder,
@@ -16,22 +21,22 @@ use std::env;
 use std::fmt::Write;
 use std::net::ToSocketAddrs;
 use std::time::SystemTime;
-use template_distribution_sv2::{
-    MESSAGE_TYPE_NEW_TEMPLATE, MESSAGE_TYPE_SET_NEW_PREV_HASH, MESSAGE_TYPE_SUBMIT_SOLUTION,
-};
 use tokio::net::TcpStream;
 use tokio::time::{sleep, Duration};
+use tracing::{error, info, warn};
 use warp::Filter;
 
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default()
-            .default_filter_or("coinswap=info")
-            .default_write_style_or("always"),
-    )
-    .is_test(true)
-    .init();
+    // Initialize tracing subscriber
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+        )
+        .init();
+
+    info!("SV2 Custom Proxy starting...");
     let client_address = env::var("CLIENT").expect("CLIENT environment variable not set");
     let server_address = env::var("SERVER").expect("SERVER environment variable not set");
     let proxy_type = env::var("PROXY_TYPE").expect("PROXY_TYPE environment variable not set");
@@ -304,7 +309,29 @@ async fn listen_for_client(client_address: &str) -> TcpStream {
 
 async fn connect_to_server(server_address: &str) -> TcpStream {
     let address = server_address.to_socket_addrs().unwrap().next().unwrap();
-    TcpStream::connect(address).await.unwrap()
+
+    let max_retries = 10;
+    let mut retry_count = 0;
+
+    loop {
+        match TcpStream::connect(address).await {
+            Ok(stream) => {
+                info!("Successfully connected to server at {}", server_address);
+                return stream;
+            }
+            Err(e) => {
+                retry_count += 1;
+                if retry_count >= max_retries {
+                    error!("Failed to connect to server at {} after {} attempts: {}",
+                               server_address, max_retries, e);
+                    panic!("Unable to connect to server: {}", e);
+                }
+                warn!("Failed to connect to server at {} (attempt {}/{}): {}. Retrying in 2s...",
+                          server_address, retry_count, max_retries, e);
+                sleep(Duration::from_secs(2)).await;
+            }
+        }
+    }
 }
 
 pub fn encode_hex(bytes: &[u8]) -> String {
@@ -392,7 +419,7 @@ async fn fetch_last_block_reward_with_retries(
         match fetch_block_reward(hash).await {
             Ok(reward) => return Ok(reward),
             Err(e) => {
-                log::error!("Attempt {} failed: {}", attempt + 1, e);
+                error!("Attempt {} failed: {}", attempt + 1, e);
                 attempt += 1;
                 sleep(delay).await;
             }
@@ -486,7 +513,7 @@ async fn intercept_prev_hash(
                     if let Ok(value) = fetch_metric_result {
                         last_sv2_block_template_value_clone.set(value);
                     } else {
-                        log::error!("Error fetching metric");
+                        error!("Error fetching metric");
                     }
                 }
             });
@@ -569,7 +596,7 @@ async fn intercept_submit_share_error(builder: &mut ProxyBuilder, stale_shares: 
     let r = builder.add_handler(Remote::Server, MESSAGE_TYPE_SUBMIT_SHARES_ERROR);
     tokio::spawn(async move {
         while let Ok(AnyMessage::Mining(Mining::SubmitSharesError(m))) = r.recv().await {
-            log::error!("SubmitSharesError received --> {:?}", m);
+            error!("SubmitSharesError received --> {:?}", m);
             stale_shares.inc();
         }
     });

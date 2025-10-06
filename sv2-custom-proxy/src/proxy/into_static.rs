@@ -1,4 +1,6 @@
-use parsers_sv2::{AnyMessage, CommonMessages, JobDeclaration, Mining, TemplateDistribution};
+use stratum_common::roles_logic_sv2::parsers_sv2::{
+    AnyMessage, CommonMessages, JobDeclaration, Mining, TemplateDistribution,
+};
 
 pub fn into_static(m: AnyMessage<'_>) -> AnyMessage<'static> {
     match m {

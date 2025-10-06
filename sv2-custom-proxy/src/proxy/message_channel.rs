@@ -2,11 +2,12 @@ use crate::proxy::into_static;
 use crate::proxy::{Frame_, StdFrame};
 use async_channel::{Receiver, Sender};
 use codec_sv2::framing_sv2::framing::Frame as EitherFrame;
-use parsers_sv2::AnyMessage;
+use stratum_common::roles_logic_sv2::parsers_sv2::AnyMessage;
+use tracing::{debug, error, trace};
 
 pub type MessageType = u8;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum Remote {
     Client,
     Server,
@@ -21,7 +22,9 @@ pub struct MessageChannel {
 
 impl MessageChannel {
     pub async fn on_message(&mut self, frame: &mut Frame_) -> Option<Frame_> {
+        debug!("Handler checking message from {:?}", self.expect_from);
         let (mt, message) = self.message_from_frame(frame);
+        debug!("Parsed message type {} from {:?}, handler expects type {}", mt, self.expect_from, self.message_type);
         if mt == self.message_type {
             if self.sender.send(message).await.is_err() {
                 eprintln!("Impossible to send message to message handler, for: {mt}");
@@ -47,18 +50,25 @@ impl MessageChannel {
 
     fn message_from_frame(&self, frame: &mut Frame_) -> (u8, AnyMessage<'static>) {
         let expect_from = &self.expect_from;
+        trace!("message_from_frame called for frame from {:?}", expect_from);
         match frame {
             EitherFrame::Sv2(frame) => {
                 if let Some(header) = frame.get_header() {
                     let mt = header.msg_type();
+                    trace!("Frame has message type: {}, getting payload...", mt);
                     let mut payload = frame.payload().to_vec();
+                    trace!("Payload length: {} bytes, attempting to parse as AnyMessage", payload.len());
                     let maybe_message: Result<AnyMessage<'_>, _> =
                         (mt, payload.as_mut_slice()).try_into();
 
                     match maybe_message {
-                        Ok(message) => (mt, into_static(message)),
-                        _ => {
-                            eprintln!("Received frame with invalid payload or message type: {frame:?}, from: {expect_from}");
+                        Ok(message) => {
+                            trace!("Successfully parsed message type {}", mt);
+                            (mt, into_static(message))
+                        },
+                        Err(e) => {
+                            error!("Failed to parse message type {} (0x{:02x}): {:?}, from: {}", mt, mt, e, expect_from);
+                            eprintln!("Received frame with invalid payload or message type: {frame:?}, from: {expect_from}, error: {e:?}");
                             std::process::exit(1);
                         }
                     }
