@@ -4,7 +4,7 @@
 # upstream_port = 3336
 
 # Local Mining Device Downstream Connection
-downstream_address = "10.5.0.7"
+downstream_address = "0.0.0.0"
 downstream_port = 34256
 
 # Version support
